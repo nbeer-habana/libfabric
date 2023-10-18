@@ -57,6 +57,64 @@ static struct fi_ops vrb_mr_fi_ops = {
 	.ops_open = fi_no_ops_open,
 };
 
+#if HAVE_SYNAPSEAI
+static struct ibv_mr *vrb_reg_synapseai_dmabuf(struct ibv_pd *pd,
+					       const void *buf, size_t len,
+					       int vrb_access)
+{
+	int dmabuf_fd;
+	int ret;
+	struct ibv_mr *mr;
+	int saved_errno = 0;
+	enum { TRY, ALWAYS, NEVER };
+	static int failover_policy = TRY;
+
+	if (failover_policy == ALWAYS)
+		goto failover;
+
+	ret = synapseai_get_dmabuf_fd((uint64_t) buf, (uint64_t) len,
+				      &dmabuf_fd);
+	FI_DBG(&vrb_prov, FI_LOG_MR,
+	       "synapseai returned dmabuf FD %d for addr=[%p], size=[%zd] \n",
+	       dmabuf_fd, buf, len);
+	if (ret != FI_SUCCESS) {
+		FI_WARN(&vrb_prov, FI_LOG_MR,
+			"Unable to get dmabuf fd for Gaudi device buffer \n");
+		return NULL;
+	}
+
+	mr = ibv_reg_dmabuf_mr(pd, 0, len, (uint64_t) buf /* iova */,
+			       (int) (uintptr_t) dmabuf_fd /* dmabuf fd */,
+			       vrb_access);
+	if (!mr && failover_policy == TRY && vrb_gl_data.peer_mem_support) {
+		saved_errno = errno;
+		goto failover;
+	}
+
+	failover_policy = NEVER;
+	return mr;
+
+failover:
+	mr = ibv_reg_mr(pd, buf, len, vrb_access);
+	if (!mr) {
+		if (saved_errno) {
+			FI_INFO(&vrb_prov, FI_LOG_MR,
+				"Failover failed: ibv_reg_mr(%p, %zd) error "
+				"%d\n",
+				buf, len, errno);
+			errno = saved_errno;
+		}
+		return NULL;
+	}
+	if (failover_policy == TRY) {
+		failover_policy = ALWAYS;
+		FI_INFO(&vrb_prov, FI_LOG_MR,
+			"Failover on: ibv_reg_dmabuf_mr() ==> ibv_reg_mr()\n");
+	}
+	return mr;
+}
+#endif
+
 #if VERBS_HAVE_DMABUF_MR
 static struct ibv_mr *vrb_reg_ze_dmabuf(struct ibv_pd *pd, const void *buf,
 					size_t len, int vrb_access)
@@ -142,6 +200,9 @@ vrb_mr_reg_common(struct vrb_mem_desc *md, int vrb_access, const void *base_addr
 					   (int) device, vrb_access);
 	else if (iface == FI_HMEM_ZE && vrb_gl_data.dmabuf_support)
 		md->mr = vrb_reg_ze_dmabuf(md->domain->pd, buf, len,
+					   vrb_access);
+	else if(iface == FI_HMEM_SYNAPSEAI && vrb_gl_data.dmabuf_support)
+		md->mr = vrb_reg_synapseai_dmabuf(md->domain->pd, buf, len,
 					   vrb_access);
 	else
 #endif
