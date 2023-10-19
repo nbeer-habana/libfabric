@@ -75,11 +75,11 @@ static struct ibv_mr *vrb_reg_synapseai_dmabuf(struct ibv_pd *pd,
 	ret = synapseai_get_dmabuf_fd((uint64_t) buf, (uint64_t) len,
 				      &dmabuf_fd);
 	FI_DBG(&vrb_prov, FI_LOG_MR,
-	       "synapseai returned dmabuf FD %d for addr=[%p], size=[%zd] \n",
+	       "synapseai returned dmabuf FD %d for addr=[%p], size=[%zd]\n",
 	       dmabuf_fd, buf, len);
 	if (ret != FI_SUCCESS) {
 		FI_WARN(&vrb_prov, FI_LOG_MR,
-			"Unable to get dmabuf fd for Gaudi device buffer \n");
+			"Unable to get dmabuf fd for Gaudi device buffer\n");
 		return NULL;
 	}
 
@@ -99,8 +99,7 @@ failover:
 	if (!mr) {
 		if (saved_errno) {
 			FI_INFO(&vrb_prov, FI_LOG_MR,
-				"Failover failed: ibv_reg_mr(%p, %zd) error "
-				"%d\n",
+				"Failover failed: ibv_reg_mr(%p, %zd) error %d\n",
 				buf, len, errno);
 			errno = saved_errno;
 		}
@@ -201,7 +200,7 @@ vrb_mr_reg_common(struct vrb_mem_desc *md, int vrb_access, const void *base_addr
 	else if (iface == FI_HMEM_ZE && vrb_gl_data.dmabuf_support)
 		md->mr = vrb_reg_ze_dmabuf(md->domain->pd, buf, len,
 					   vrb_access);
-	else if(iface == FI_HMEM_SYNAPSEAI && vrb_gl_data.dmabuf_support)
+	else if (iface == FI_HMEM_SYNAPSEAI && vrb_gl_data.dmabuf_support)
 		md->mr = vrb_reg_synapseai_dmabuf(md->domain->pd, buf, len,
 					   vrb_access);
 	else
